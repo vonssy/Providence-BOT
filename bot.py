@@ -8,7 +8,7 @@ from aiohttp_socks import ProxyConnector
 from fake_useragent import FakeUserAgent
 from datetime import datetime
 from colorama import *
-import asyncio, time, re, os, pytz
+import asyncio, time, json, re, os, pytz
 
 wib = pytz.timezone('Asia/Jakarta')
 
@@ -244,6 +244,62 @@ class Providence:
                 )
 
         return None
+    
+    async def daily_tasks(self, token: str, proxy_url=None, retries=5):
+        url = f"{self.BASE_API}/quests/daily-link/today"
+        headers = {
+            **self.HEADERS[token],
+            "Cookie": self.cookie_headers[token]
+        }
+        for attempt in range(retries):
+            connector, proxy, proxy_auth = self.build_proxy_config(proxy_url)
+            try:
+                async with ClientSession(connector=connector, timeout=ClientTimeout(total=60)) as session:
+                    async with session.get(url=url, headers=headers, proxy=proxy, proxy_auth=proxy_auth) as response:
+                        response.raise_for_status()
+                        return await response.json()
+            except (Exception, ClientResponseError) as e:
+                if attempt < retries - 1:
+                    await asyncio.sleep(5)
+                    continue
+                self.log(
+                    f"{Fore.CYAN + Style.BRIGHT}Tasks   :{Style.RESET_ALL}"
+                    f"{Fore.RED+Style.BRIGHT} Fetch Daily Tasks Failed {Style.RESET_ALL}"
+                    f"{Fore.MAGENTA+Style.BRIGHT}-{Style.RESET_ALL}"
+                    f"{Fore.YELLOW+Style.BRIGHT} {str(e)} {Style.RESET_ALL}"
+                )
+
+        return None
+    
+    async def complete_tasks(self, token: str, quest_id: str, quest_name: str, proxy_url=None, retries=5):
+        url = f"{self.BASE_API}/quests/daily-link/complete"
+        data = json.dumps({"questId": quest_id})
+        headers = {
+            **self.HEADERS[token],
+            "Content-Length": str(len(data)),
+            "Content-Type": "application/json",
+            "Cookie": self.cookie_headers[token]
+        }
+        for attempt in range(retries):
+            connector, proxy, proxy_auth = self.build_proxy_config(proxy_url)
+            try:
+                async with ClientSession(connector=connector, timeout=ClientTimeout(total=60)) as session:
+                    async with session.post(url=url, headers=headers, data=data, proxy=proxy, proxy_auth=proxy_auth) as response:
+                        response.raise_for_status()
+                        return await response.json()
+            except (Exception, ClientResponseError) as e:
+                if attempt < retries - 1:
+                    await asyncio.sleep(5)
+                    continue
+                self.log(
+                    f"{Fore.CYAN+Style.BRIGHT}   > {Style.RESET_ALL}"
+                    f"{Fore.WHITE+Style.BRIGHT}{quest_name}{Style.RESET_ALL}"
+                    f"{Fore.RED+Style.BRIGHT} Not Completed {Style.RESET_ALL}"
+                    f"{Fore.MAGENTA+Style.BRIGHT}-{Style.RESET_ALL}"
+                    f"{Fore.YELLOW+Style.BRIGHT} {str(e)} {Style.RESET_ALL}"
+                )
+
+        return None
             
     async def process_check_connection(self, token: str, use_proxy: bool, rotate_proxy: bool):
         while True:
@@ -287,33 +343,63 @@ class Providence:
                 )
 
             checkin_status = await self.checkin_status(token, proxy)
-            if not checkin_status: return
-            
-            can_checkin = checkin_status.get("data", {}).get("canCheckinToday")
-            if can_checkin:
-                claim = await self.claim_checkin(token, proxy)
-                if claim:
-                    reward = claim.get("data", {}).get("xpEarned")
+            if checkin_status:
+                can_checkin = checkin_status.get("data", {}).get("canCheckinToday")
+                if can_checkin:
+                    claim = await self.claim_checkin(token, proxy)
+                    if claim:
+                        reward = claim.get("data", {}).get("xpEarned")
+                        self.log(
+                            f"{Fore.CYAN + Style.BRIGHT}Check-In:{Style.RESET_ALL}"
+                            f"{Fore.GREEN + Style.BRIGHT} Claimed Successfully {Style.RESET_ALL}"
+                            f"{Fore.MAGENTA + Style.BRIGHT}-{Style.RESET_ALL}"
+                            f"{Fore.CYAN + Style.BRIGHT} Reward: {Style.RESET_ALL}"
+                            f"{Fore.WHITE + Style.BRIGHT}{reward} XP{Style.RESET_ALL}"
+                        )
+                    
+                else:
+                    next_checkin_timestamp = checkin_status.get("data", {}).get("nextCheckinIn")
+                    next_checkin_datetime = int(time.time()) + (next_checkin_timestamp / 1000)
+                    formatted_next_checkin = datetime.fromtimestamp(next_checkin_datetime).astimezone(wib).strftime('%x %X %Z')
+                    
                     self.log(
                         f"{Fore.CYAN + Style.BRIGHT}Check-In:{Style.RESET_ALL}"
-                        f"{Fore.GREEN + Style.BRIGHT} Claimed Successfully {Style.RESET_ALL}"
+                        f"{Fore.YELLOW + Style.BRIGHT} Not Time To Claim {Style.RESET_ALL}"
                         f"{Fore.MAGENTA + Style.BRIGHT}-{Style.RESET_ALL}"
-                        f"{Fore.CYAN + Style.BRIGHT} Reward: {Style.RESET_ALL}"
-                        f"{Fore.WHITE + Style.BRIGHT}{reward} XP{Style.RESET_ALL}"
+                        f"{Fore.CYAN + Style.BRIGHT} Claim At: {Style.RESET_ALL}"
+                        f"{Fore.WHITE + Style.BRIGHT}{formatted_next_checkin}{Style.RESET_ALL}"
                     )
-                
-            else:
-                next_checkin_timestamp = checkin_status.get("data", {}).get("nextCheckinIn")
-                next_checkin_datetime = int(time.time()) + (next_checkin_timestamp / 1000)
-                formatted_next_checkin = datetime.fromtimestamp(next_checkin_datetime).astimezone(wib).strftime('%x %X %Z')
-                
-                self.log(
-                    f"{Fore.CYAN + Style.BRIGHT}Check-In:{Style.RESET_ALL}"
-                    f"{Fore.YELLOW + Style.BRIGHT} Not Time To Claim {Style.RESET_ALL}"
-                    f"{Fore.MAGENTA + Style.BRIGHT}-{Style.RESET_ALL}"
-                    f"{Fore.CYAN + Style.BRIGHT} Claim At: {Style.RESET_ALL}"
-                    f"{Fore.WHITE + Style.BRIGHT}{formatted_next_checkin}{Style.RESET_ALL}"
-                )
+
+            quest_lists = await self.daily_tasks(token, proxy)
+            if quest_lists:
+                self.log(f"{Fore.CYAN + Style.BRIGHT}Tasks   :{Style.RESET_ALL}")
+
+                quests = quest_lists.get("data", [])
+                if quests:
+                    for quest in quests:
+                        quest_id = quest["id"]
+                        quest_name = quest["title"]
+                        quest_xp = quest["xp"]
+                        is_completed = quest["isCompleted"]
+
+                        if is_completed:
+                            self.log(
+                                f"{Fore.CYAN+Style.BRIGHT}   > {Style.RESET_ALL}"
+                                f"{Fore.WHITE+Style.BRIGHT}{quest_name}{Style.RESET_ALL}"
+                                f"{Fore.YELLOW+Style.BRIGHT} Already Completed {Style.RESET_ALL}"
+                            )
+                            continue
+
+                        complete = await self.complete_tasks(token, quest_id, quest_name, proxy)
+                        if complete:
+                            self.log(
+                                f"{Fore.CYAN+Style.BRIGHT}   > {Style.RESET_ALL}"
+                                f"{Fore.WHITE+Style.BRIGHT}{quest_name}{Style.RESET_ALL}"
+                                f"{Fore.GREEN+Style.BRIGHT} Completed {Style.RESET_ALL}"
+                                f"{Fore.MAGENTA+Style.BRIGHT}-{Style.RESET_ALL}"
+                                f"{Fore.CYAN+Style.BRIGHT} Reward: {Style.RESET_ALL}"
+                                f"{Fore.WHITE+Style.BRIGHT} {quest_xp} XP {Style.RESET_ALL}"
+                            )
 
     async def main(self):
         try:
@@ -323,8 +409,6 @@ class Providence:
             proxy_choice, rotate_proxy = self.print_question()
 
             while True:
-                use_proxy = True if proxy_choice == 1 else False
-
                 self.clear_terminal()
                 self.welcome()
                 self.log(
@@ -332,6 +416,7 @@ class Providence:
                     f"{Fore.WHITE + Style.BRIGHT}{len(accounts)}{Style.RESET_ALL}"
                 )
 
+                use_proxy = True if proxy_choice == 1 else False
                 if use_proxy:
                     await self.load_proxies()
                 

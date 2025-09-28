@@ -1,6 +1,6 @@
 # 🚀 Providence BOT
 
-> Automated daily check-in and multi-account management
+> Automated daily completion and multi-account management
 
 [![Python Version](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -20,7 +20,7 @@
 
 ## 🎯 Overview
 
-Providence BOT is an automated tool designed to daily check-in across multiple accounts. It provides seamless offers robust proxy support for enhanced security and reliability.
+Providence BOT is an automated tool designed to daily completion across multiple accounts. It provides seamless offers robust proxy support for enhanced security and reliability.
 
 **🔗 Get Started:** [Register on Providence](https://hub.playprovidence.io/referral-signin/DAA4BADA)  
 **🎁 Use Code:** `DAA4BADA`
@@ -33,6 +33,7 @@ Providence BOT is an automated tool designed to daily check-in across multiple a
 - 🌐 **Flexible Proxy Support** - Run with or without proxy configuration
 - 🔀 **Smart Proxy Rotation** - Automatic rotation of invalid proxies
 - ⏰ **Daily Check-In** - Automated daily check-in
+- ⏰ **Daily Quests** - Automated daily quests
 - 👥 **Multi-Account Support** - Manage multiple accounts simultaneously
 
 ## 📋 Requirements
