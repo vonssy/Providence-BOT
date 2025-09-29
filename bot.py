@@ -372,10 +372,11 @@ class Providence:
 
             quest_lists = await self.daily_tasks(token, proxy)
             if quest_lists:
-                self.log(f"{Fore.CYAN + Style.BRIGHT}Tasks   :{Style.RESET_ALL}")
-
                 quests = quest_lists.get("data", [])
+
                 if quests:
+                    self.log(f"{Fore.CYAN + Style.BRIGHT}Tasks   :{Style.RESET_ALL}")
+
                     for quest in quests:
                         quest_id = quest["id"]
                         quest_name = quest["title"]
@@ -400,6 +401,12 @@ class Providence:
                                 f"{Fore.CYAN+Style.BRIGHT} Reward: {Style.RESET_ALL}"
                                 f"{Fore.WHITE+Style.BRIGHT} {quest_xp} XP {Style.RESET_ALL}"
                             )
+
+                else:
+                    self.log(
+                        f"{Fore.CYAN + Style.BRIGHT}Tasks   :{Style.RESET_ALL}"
+                        f"{Fore.YELLOW + Style.BRIGHT} No Available Daily Tasks Found {Style.RESET_ALL}"
+                    )
 
     async def main(self):
         try:
