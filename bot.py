@@ -1,14 +1,8 @@
-from aiohttp import (
-    ClientResponseError,
-    ClientSession,
-    ClientTimeout,
-    BasicAuth
-)
-from aiohttp_socks import ProxyConnector
+from curl_cffi import requests
 from fake_useragent import FakeUserAgent
 from datetime import datetime
 from colorama import *
-import asyncio, time, json, re, os, pytz
+import asyncio, time, json, os, pytz
 
 wib = pytz.timezone('Asia/Jakarta')
 
@@ -91,26 +85,6 @@ class Providence:
         self.proxy_index = (self.proxy_index + 1) % len(self.proxies)
         return proxy
     
-    def build_proxy_config(self, proxy=None):
-        if not proxy:
-            return None, None, None
-
-        if proxy.startswith("socks"):
-            connector = ProxyConnector.from_url(proxy)
-            return connector, None, None
-
-        elif proxy.startswith("http"):
-            match = re.match(r"http://(.*?):(.*?)@(.*)", proxy)
-            if match:
-                username, password, host_port = match.groups()
-                clean_url = f"http://{host_port}"
-                auth = BasicAuth(username, password)
-                return None, clean_url, auth
-            else:
-                return None, proxy, None
-
-        raise Exception("Unsupported Proxy Type.")
-    
     def mask_account(self, account):
         if "@" in account:
             local, domain = account.split('@', 1)
@@ -150,13 +124,12 @@ class Providence:
         return proxy_choice, rotate_proxy
     
     async def check_connection(self, proxy_url=None):
-        connector, proxy, proxy_auth = self.build_proxy_config(proxy_url)
+        proxies = {"http":proxy_url, "https":proxy_url} if proxy_url else None
         try:
-            async with ClientSession(connector=connector, timeout=ClientTimeout(total=30)) as session:
-                async with session.get(url="https://api.ipify.org?format=json", proxy=proxy, proxy_auth=proxy_auth) as response:
-                    response.raise_for_status()
-                    return True
-        except (Exception, ClientResponseError) as e:
+            response = await asyncio.to_thread(requests.get, url="https://api.ipify.org?format=json", proxies=proxies, timeout=30, impersonate="chrome120")
+            response.raise_for_status()
+            return True
+        except Exception as e:
             self.log(
                 f"{Fore.CYAN+Style.BRIGHT}Status  :{Style.RESET_ALL}"
                 f"{Fore.RED+Style.BRIGHT} Connection Not 200 OK {Style.RESET_ALL}"
@@ -173,13 +146,12 @@ class Providence:
             "Cookie": self.cookie_headers[token]
         }
         for attempt in range(retries):
-            connector, proxy, proxy_auth = self.build_proxy_config(proxy_url)
+            proxies = {"http":proxy_url, "https":proxy_url} if proxy_url else None
             try:
-                async with ClientSession(connector=connector, timeout=ClientTimeout(total=60)) as session:
-                    async with session.get(url=url, headers=headers, proxy=proxy, proxy_auth=proxy_auth) as response:
-                        response.raise_for_status()
-                        return await response.json()
-            except (Exception, ClientResponseError) as e:
+                response = await asyncio.to_thread(requests.get, url=url, headers=headers, proxies=proxies, timeout=120, impersonate="chrome120")
+                response.raise_for_status()
+                return response.json()
+            except Exception as e:
                 if attempt < retries - 1:
                     await asyncio.sleep(5)
                     continue
@@ -199,13 +171,12 @@ class Providence:
             "Cookie": self.cookie_headers[token]
         }
         for attempt in range(retries):
-            connector, proxy, proxy_auth = self.build_proxy_config(proxy_url)
+            proxies = {"http":proxy_url, "https":proxy_url} if proxy_url else None
             try:
-                async with ClientSession(connector=connector, timeout=ClientTimeout(total=60)) as session:
-                    async with session.get(url=url, headers=headers, proxy=proxy, proxy_auth=proxy_auth) as response:
-                        response.raise_for_status()
-                        return await response.json()
-            except (Exception, ClientResponseError) as e:
+                response = await asyncio.to_thread(requests.get, url=url, headers=headers, proxies=proxies, timeout=120, impersonate="chrome120")
+                response.raise_for_status()
+                return response.json()
+            except Exception as e:
                 if attempt < retries - 1:
                     await asyncio.sleep(5)
                     continue
@@ -226,13 +197,12 @@ class Providence:
             "Cookie": self.cookie_headers[token]
         }
         for attempt in range(retries):
-            connector, proxy, proxy_auth = self.build_proxy_config(proxy_url)
+            proxies = {"http":proxy_url, "https":proxy_url} if proxy_url else None
             try:
-                async with ClientSession(connector=connector, timeout=ClientTimeout(total=60)) as session:
-                    async with session.post(url=url, headers=headers, proxy=proxy, proxy_auth=proxy_auth) as response:
-                        response.raise_for_status()
-                        return await response.json()
-            except (Exception, ClientResponseError) as e:
+                response = await asyncio.to_thread(requests.post, url=url, headers=headers, proxies=proxies, timeout=120, impersonate="chrome120")
+                response.raise_for_status()
+                return response.json()
+            except Exception as e:
                 if attempt < retries - 1:
                     await asyncio.sleep(5)
                     continue
@@ -252,13 +222,12 @@ class Providence:
             "Cookie": self.cookie_headers[token]
         }
         for attempt in range(retries):
-            connector, proxy, proxy_auth = self.build_proxy_config(proxy_url)
+            proxies = {"http":proxy_url, "https":proxy_url} if proxy_url else None
             try:
-                async with ClientSession(connector=connector, timeout=ClientTimeout(total=60)) as session:
-                    async with session.get(url=url, headers=headers, proxy=proxy, proxy_auth=proxy_auth) as response:
-                        response.raise_for_status()
-                        return await response.json()
-            except (Exception, ClientResponseError) as e:
+                response = await asyncio.to_thread(requests.get, url=url, headers=headers, proxies=proxies, timeout=120, impersonate="chrome120")
+                response.raise_for_status()
+                return response.json()
+            except Exception as e:
                 if attempt < retries - 1:
                     await asyncio.sleep(5)
                     continue
@@ -281,13 +250,12 @@ class Providence:
             "Cookie": self.cookie_headers[token]
         }
         for attempt in range(retries):
-            connector, proxy, proxy_auth = self.build_proxy_config(proxy_url)
+            proxies = {"http":proxy_url, "https":proxy_url} if proxy_url else None
             try:
-                async with ClientSession(connector=connector, timeout=ClientTimeout(total=60)) as session:
-                    async with session.post(url=url, headers=headers, data=data, proxy=proxy, proxy_auth=proxy_auth) as response:
-                        response.raise_for_status()
-                        return await response.json()
-            except (Exception, ClientResponseError) as e:
+                response = await asyncio.to_thread(requests.post, url=url, headers=headers, data=data, proxies=proxies, timeout=120, impersonate="chrome120")
+                response.raise_for_status()
+                return response.json()
+            except Exception as e:
                 if attempt < retries - 1:
                     await asyncio.sleep(5)
                     continue
