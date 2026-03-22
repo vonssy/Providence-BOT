@@ -14,8 +14,9 @@
 - [Installation](#-installation)
 - [Configuration](#-configuration)
 - [Usage](#-usage)
-- [Support](#support-the-project)
+- [Donation](#-Donation)
 - [Contributing](#-contributing)
+- [Contact & Support](#-Contact-&-Support)
 
 ## 🎯 Overview
 
@@ -114,11 +115,9 @@ When starting the bot, you'll be prompted to choose:
    - `y`: Enable automatic invalid proxy rotation
    - `n`: Disable auto-rotation
 
-## 💖 Support the Project
+## 💖 Donation
 
 If this project has been helpful to you, consider supporting its development:
-
-### Cryptocurrency Donations
 
 | Network | Address |
 |---------|---------|
