@@ -1,26 +1,37 @@
 from curl_cffi import requests
-from fake_useragent import FakeUserAgent
 from datetime import datetime
 from colorama import *
-import asyncio, time, json, os, pytz
-
-wib = pytz.timezone('Asia/Jakarta')
+import asyncio, random, time, sys, re, os
 
 class Providence:
     def __init__(self) -> None:
-        self.BASE_API = "https://hub.playprovidence.io/api"
-        self.HEADERS = {}
+        self.BASE_API = "https://hub.playprovidence.io"
+        self.USE_PROXY = False
+        self.ROTATE_PROXY = False
         self.proxies = []
         self.proxy_index = 0
         self.account_proxies = {}
-        self.cookie_headers = {}
+        self.accounts = {}
+        
+        self.USER_AGENTS = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Safari/605.1.15",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (X11; Linux x86_64; rv:133.0) Gecko/20100101 Firefox/133.0",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 OPR/117.0.0.0"
+        ]
 
     def clear_terminal(self):
         os.system('cls' if os.name == 'nt' else 'clear')
 
     def log(self, message):
         print(
-            f"{Fore.CYAN + Style.BRIGHT}[ {datetime.now().astimezone(wib).strftime('%x %X %Z')} ]{Style.RESET_ALL}"
+            f"{Fore.CYAN + Style.BRIGHT}[ {datetime.now().strftime('%x %X')} ]{Style.RESET_ALL}"
             f"{Fore.WHITE + Style.BRIGHT} | {Style.RESET_ALL}{message}",
             flush=True
         )
@@ -40,7 +51,17 @@ class Providence:
         minutes, seconds = divmod(remainder, 60)
         return f"{int(hours):02}:{int(minutes):02}:{int(seconds):02}"
     
-    async def load_proxies(self):
+    def load_tokens(self):
+        filename = "tokens.txt"
+        try:
+            with open(filename, 'r') as file:
+                tokens = [line.strip() for line in file if line.strip()]
+            return tokens
+        except Exception as e:
+            print(f"{Fore.RED + Style.BRIGHT}Failed To Load Tokens: {e}{Style.RESET_ALL}")
+            return None
+
+    def load_proxies(self):
         filename = "proxy.txt"
         try:
             if not os.path.exists(filename):
@@ -67,7 +88,7 @@ class Providence:
         if any(proxies.startswith(scheme) for scheme in schemes):
             return proxies
         return f"http://{proxies}"
-
+    
     def get_next_proxy_for_account(self, account):
         if account not in self.account_proxies:
             if not self.proxies:
@@ -85,12 +106,40 @@ class Providence:
         self.proxy_index = (self.proxy_index + 1) % len(self.proxies)
         return proxy
     
+    def display_proxy(self, proxy_url=None):
+        if not proxy_url: return "No Proxy"
+
+        proxy_url = re.sub(r"^(http|https|socks4|socks5)://", "", proxy_url)
+
+        if "@" in proxy_url:
+            proxy_url = proxy_url.split("@", 1)[1]
+
+        return proxy_url
+    
     def mask_account(self, account):
         if "@" in account:
             local, domain = account.split('@', 1)
             mask_account = local[:3] + '*' * 3 + local[-3:]
             return f"{mask_account}@{domain}"
+        return account
     
+    def initialize_headers(self, idx: int):
+        headers = {
+            "Accept": "*/*",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Cache-Control": "no-cache",
+            "Origin": "https://hub.playprovidence.io",
+            "Pragma": "no-cache",
+            "Referer": "https://hub.playprovidence.io/",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-origin",
+            "User-Agent": self.accounts[idx]["user_agent"]
+        }
+
+        return headers.copy()
+        
     def print_question(self):
         while True:
             try:
@@ -104,30 +153,42 @@ class Providence:
                         "Without"
                     )
                     print(f"{Fore.GREEN + Style.BRIGHT}Run {proxy_type} Proxy Selected.{Style.RESET_ALL}")
+                    self.USE_PROXY = True if proxy_choice == 1 else False
                     break
                 else:
                     print(f"{Fore.RED + Style.BRIGHT}Please enter either 1 or 2.{Style.RESET_ALL}")
             except ValueError:
                 print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter a number (1 or 2).{Style.RESET_ALL}")
 
-        rotate_proxy = False
-        if proxy_choice == 1:
+        if self.USE_PROXY:
             while True:
                 rotate_proxy = input(f"{Fore.BLUE + Style.BRIGHT}Rotate Invalid Proxy? [y/n] -> {Style.RESET_ALL}").strip()
-
                 if rotate_proxy in ["y", "n"]:
-                    rotate_proxy = rotate_proxy == "y"
+                    self.ROTATE_PROXY = True if rotate_proxy == "y" else False
                     break
                 else:
                     print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter 'y' or 'n'.{Style.RESET_ALL}")
+    
+    def ensure_ok(self, response):
+        err_code = response.status_code
+        err_text = response.text
 
-        return proxy_choice, rotate_proxy
+        if err_code >= 400:
+            raise Exception(f"HTTP {err_code}: {err_text}")
     
     async def check_connection(self, proxy_url=None):
+        url = "https://api.ipify.org?format=json"
+
         proxies = {"http":proxy_url, "https":proxy_url} if proxy_url else None
         try:
-            response = await asyncio.to_thread(requests.get, url="https://api.ipify.org?format=json", proxies=proxies, timeout=30, impersonate="chrome120")
-            response.raise_for_status()
+            response = await asyncio.to_thread(
+                requests.get, 
+                url=url, 
+                proxies=proxies, 
+                timeout=30, 
+                impersonate="chrome120"
+            )
+            self.ensure_ok(response)
             return True
         except Exception as e:
             self.log(
@@ -139,17 +200,59 @@ class Providence:
         
         return None
     
-    async def user_stats(self, token: str, proxy_url=None, retries=5):
-        url = f"{self.BASE_API}/user/stats"
-        headers = {
-            **self.HEADERS[token],
-            "Cookie": self.cookie_headers[token]
-        }
+    async def auth_session(self, idx: int, proxy_url=None, retries=5):
+        url = f"{self.BASE_API}/api/auth/session"
+        
         for attempt in range(retries):
             proxies = {"http":proxy_url, "https":proxy_url} if proxy_url else None
             try:
-                response = await asyncio.to_thread(requests.get, url=url, headers=headers, proxies=proxies, timeout=120, impersonate="chrome120")
-                response.raise_for_status()
+                headers = self.initialize_headers(idx)
+                cookies = self.accounts[idx]["cookie"]
+
+                response = await asyncio.to_thread(
+                    requests.get, 
+                    url=url, 
+                    headers=headers, 
+                    cookies=cookies, 
+                    proxies=proxies, 
+                    timeout=120, 
+                    impersonate="chrome120"
+                )
+                print(f"{response.status_code}:{response.text}")
+                self.ensure_ok(response)
+                return response.json()
+            except Exception as e:
+                if attempt < retries - 1:
+                    await asyncio.sleep(5)
+                    continue
+                self.log(
+                    f"{Fore.CYAN + Style.BRIGHT}Session :{Style.RESET_ALL}"
+                    f"{Fore.RED+Style.BRIGHT} Failed to Authenticate {Style.RESET_ALL}"
+                    f"{Fore.MAGENTA+Style.BRIGHT}-{Style.RESET_ALL}"
+                    f"{Fore.YELLOW+Style.BRIGHT} {str(e)} {Style.RESET_ALL}"
+                )
+
+        return None
+    
+    async def user_stats(self, idx: int, proxy_url=None, retries=5):
+        url = f"{self.BASE_API}/api/user/stats"
+        
+        for attempt in range(retries):
+            proxies = {"http":proxy_url, "https":proxy_url} if proxy_url else None
+            try:
+                headers = self.initialize_headers(idx)
+                cookies = self.accounts[idx]["cookie"]
+
+                response = await asyncio.to_thread(
+                    requests.get, 
+                    url=url, 
+                    headers=headers, 
+                    cookies=cookies, 
+                    proxies=proxies, 
+                    timeout=120, 
+                    impersonate="chrome120"
+                )
+                self.ensure_ok(response)
                 return response.json()
             except Exception as e:
                 if attempt < retries - 1:
@@ -157,24 +260,32 @@ class Providence:
                     continue
                 self.log(
                     f"{Fore.CYAN + Style.BRIGHT}Account :{Style.RESET_ALL}"
-                    f"{Fore.RED+Style.BRIGHT} Fetch Data Failed {Style.RESET_ALL}"
+                    f"{Fore.RED+Style.BRIGHT} Failed to Fetch Stats {Style.RESET_ALL}"
                     f"{Fore.MAGENTA+Style.BRIGHT}-{Style.RESET_ALL}"
                     f"{Fore.YELLOW+Style.BRIGHT} {str(e)} {Style.RESET_ALL}"
                 )
 
         return None
     
-    async def checkin_status(self, token: str, proxy_url=None, retries=5):
-        url = f"{self.BASE_API}/daily-checkin/status"
-        headers = {
-            **self.HEADERS[token],
-            "Cookie": self.cookie_headers[token]
-        }
+    async def checkin_status(self, idx: int, proxy_url=None, retries=5):
+        url = f"{self.BASE_API}/api/daily-checkin/status"
+        
         for attempt in range(retries):
             proxies = {"http":proxy_url, "https":proxy_url} if proxy_url else None
             try:
-                response = await asyncio.to_thread(requests.get, url=url, headers=headers, proxies=proxies, timeout=120, impersonate="chrome120")
-                response.raise_for_status()
+                headers = self.initialize_headers(idx)
+                cookies = self.accounts[idx]["cookie"]
+
+                response = await asyncio.to_thread(
+                    requests.get, 
+                    url=url, 
+                    headers=headers, 
+                    cookies=cookies, 
+                    proxies=proxies, 
+                    timeout=120, 
+                    impersonate="chrome120"
+                )
+                self.ensure_ok(response)
                 return response.json()
             except Exception as e:
                 if attempt < retries - 1:
@@ -182,25 +293,32 @@ class Providence:
                     continue
                 self.log(
                     f"{Fore.CYAN + Style.BRIGHT}Check-In:{Style.RESET_ALL}"
-                    f"{Fore.RED+Style.BRIGHT} Fetch Status Failed {Style.RESET_ALL}"
+                    f"{Fore.RED+Style.BRIGHT} Failed to Fetch Status {Style.RESET_ALL}"
                     f"{Fore.MAGENTA+Style.BRIGHT}-{Style.RESET_ALL}"
                     f"{Fore.YELLOW+Style.BRIGHT} {str(e)} {Style.RESET_ALL}"
                 )
 
         return None
     
-    async def claim_checkin(self, token: str, proxy_url=None, retries=5):
-        url = f"{self.BASE_API}/daily-checkin/checkin"
-        headers = {
-            **self.HEADERS[token],
-            "Content-Length": "0",
-            "Cookie": self.cookie_headers[token]
-        }
+    async def claim_checkin(self, idx: int, proxy_url=None, retries=5):
+        url = f"{self.BASE_API}/api/daily-checkin/checkin"
+        
         for attempt in range(retries):
             proxies = {"http":proxy_url, "https":proxy_url} if proxy_url else None
             try:
-                response = await asyncio.to_thread(requests.post, url=url, headers=headers, proxies=proxies, timeout=120, impersonate="chrome120")
-                response.raise_for_status()
+                headers = self.initialize_headers(idx)
+                cookies = self.accounts[idx]["cookie"]
+
+                response = await asyncio.to_thread(
+                    requests.post, 
+                    url=url, 
+                    headers=headers, 
+                    cookies=cookies, 
+                    proxies=proxies, 
+                    timeout=120, 
+                    impersonate="chrome120"
+                )
+                self.ensure_ok(response)
                 return response.json()
             except Exception as e:
                 if attempt < retries - 1:
@@ -215,17 +333,25 @@ class Providence:
 
         return None
     
-    async def daily_tasks(self, token: str, proxy_url=None, retries=5):
-        url = f"{self.BASE_API}/quests/daily-link/today"
-        headers = {
-            **self.HEADERS[token],
-            "Cookie": self.cookie_headers[token]
-        }
+    async def daily_tasks(self, idx: int, proxy_url=None, retries=5):
+        url = f"{self.BASE_API}/api/quests/daily-link/today"
+        
         for attempt in range(retries):
             proxies = {"http":proxy_url, "https":proxy_url} if proxy_url else None
             try:
-                response = await asyncio.to_thread(requests.get, url=url, headers=headers, proxies=proxies, timeout=120, impersonate="chrome120")
-                response.raise_for_status()
+                headers = self.initialize_headers(idx)
+                cookies = self.accounts[idx]["cookie"]
+
+                response = await asyncio.to_thread(
+                    requests.get, 
+                    url=url, 
+                    headers=headers, 
+                    cookies=cookies, 
+                    proxies=proxies, 
+                    timeout=120, 
+                    impersonate="chrome120"
+                )
+                self.ensure_ok(response)
                 return response.json()
             except Exception as e:
                 if attempt < retries - 1:
@@ -233,27 +359,37 @@ class Providence:
                     continue
                 self.log(
                     f"{Fore.CYAN + Style.BRIGHT}Tasks   :{Style.RESET_ALL}"
-                    f"{Fore.RED+Style.BRIGHT} Fetch Daily Tasks Failed {Style.RESET_ALL}"
+                    f"{Fore.RED+Style.BRIGHT} Failed to Fetch Daily Tasks {Style.RESET_ALL}"
                     f"{Fore.MAGENTA+Style.BRIGHT}-{Style.RESET_ALL}"
                     f"{Fore.YELLOW+Style.BRIGHT} {str(e)} {Style.RESET_ALL}"
                 )
 
         return None
     
-    async def complete_tasks(self, token: str, quest_id: str, quest_name: str, proxy_url=None, retries=5):
-        url = f"{self.BASE_API}/quests/daily-link/complete"
-        data = json.dumps({"questId": quest_id})
-        headers = {
-            **self.HEADERS[token],
-            "Content-Length": str(len(data)),
-            "Content-Type": "application/json",
-            "Cookie": self.cookie_headers[token]
-        }
+    async def complete_tasks(self, idx: int, quest_id: str, quest_name: str, proxy_url=None, retries=5):
+        url = f"{self.BASE_API}/api/quests/daily-link/complete"
+        
         for attempt in range(retries):
             proxies = {"http":proxy_url, "https":proxy_url} if proxy_url else None
             try:
-                response = await asyncio.to_thread(requests.post, url=url, headers=headers, data=data, proxies=proxies, timeout=120, impersonate="chrome120")
-                response.raise_for_status()
+                headers = self.initialize_headers(idx)
+                headers["Content-Type"] = "application/json"
+                cookies = self.accounts[idx]["cookie"]
+                payload = {
+                    "questId": quest_id
+                }
+
+                response = await asyncio.to_thread(
+                    requests.post, 
+                    url=url, 
+                    headers=headers, 
+                    cookies=cookies, 
+                    json=payload,
+                    proxies=proxies, 
+                    timeout=120, 
+                    impersonate="chrome120"
+                )
+                self.ensure_ok(response)
                 return response.json()
             except Exception as e:
                 if attempt < retries - 1:
@@ -268,178 +404,176 @@ class Providence:
                 )
 
         return None
-            
-    async def process_check_connection(self, token: str, use_proxy: bool, rotate_proxy: bool):
+    
+    async def process_check_connection(self, idx: int, proxy_url=None):
         while True:
-            proxy = self.get_next_proxy_for_account(token) if use_proxy else None
+            if self.USE_PROXY:
+                proxy_url = self.get_next_proxy_for_account(idx)
+
             self.log(
                 f"{Fore.CYAN+Style.BRIGHT}Proxy   :{Style.RESET_ALL}"
-                f"{Fore.WHITE+Style.BRIGHT} {proxy} {Style.RESET_ALL}"
+                f"{Fore.WHITE+Style.BRIGHT} {self.display_proxy(proxy_url)} {Style.RESET_ALL}"
             )
 
-            is_valid = await self.check_connection(proxy)
-            if not is_valid:
-                if rotate_proxy:
-                    proxy = self.rotate_proxy_for_account(token)
+            is_valid = await self.check_connection(proxy_url)
+            if is_valid: return True
 
+            if self.ROTATE_PROXY:
+                proxy_url = self.rotate_proxy_for_account(idx)
+                await asyncio.sleep(1)
                 continue
 
-            return True
-        
-    async def process_accounts(self, token: str, use_proxy: bool, rotate_proxy: bool):
-        is_valid = await self.process_check_connection(token, use_proxy, rotate_proxy)
-        if is_valid:
-            proxy = self.get_next_proxy_for_account(token) if use_proxy else None
+            return False
+    
+    async def process_accounts(self, idx: int, proxy_url=None):
+        is_valid = await self.process_check_connection(idx, proxy_url)
+        if not is_valid: return False
 
-            stats = await self.user_stats(token, proxy)
-            if stats:
-                email = stats.get("data", {}).get("user_email", "Unknown")
-                level = stats.get("data", {}).get("level", 0)
-                points = stats.get("data", {}).get("total_xp", 0)
+        if self.USE_PROXY:
+            proxy_url = self.get_next_proxy_for_account(idx)
 
-                self.log(
-                    f"{Fore.CYAN + Style.BRIGHT}Account :{Style.RESET_ALL}"
-                    f"{Fore.WHITE + Style.BRIGHT} {self.mask_account(email)} {Style.RESET_ALL}"
-                )
-                self.log(
-                    f"{Fore.CYAN + Style.BRIGHT}Level   :{Style.RESET_ALL}"
-                    f"{Fore.WHITE + Style.BRIGHT} {level} {Style.RESET_ALL}"
-                )
-                self.log(
-                    f"{Fore.CYAN + Style.BRIGHT}Points  :{Style.RESET_ALL}"
-                    f"{Fore.WHITE + Style.BRIGHT} {points} XP {Style.RESET_ALL}"
-                )
+        stats = await self.user_stats(idx, proxy_url)
+        if stats:
+            email = stats.get("data", {}).get("user_email", "Unknown")
+            points = stats.get("data", {}).get("total_xp", 0)
+            level = stats.get("data", {}).get("level", 0)
 
-            checkin_status = await self.checkin_status(token, proxy)
-            if checkin_status:
-                can_checkin = checkin_status.get("data", {}).get("canCheckinToday")
-                if can_checkin:
-                    claim = await self.claim_checkin(token, proxy)
-                    if claim:
-                        reward = claim.get("data", {}).get("xpEarned")
-                        self.log(
-                            f"{Fore.CYAN + Style.BRIGHT}Check-In:{Style.RESET_ALL}"
-                            f"{Fore.GREEN + Style.BRIGHT} Claimed Successfully {Style.RESET_ALL}"
-                            f"{Fore.MAGENTA + Style.BRIGHT}-{Style.RESET_ALL}"
-                            f"{Fore.CYAN + Style.BRIGHT} Reward: {Style.RESET_ALL}"
-                            f"{Fore.WHITE + Style.BRIGHT}{reward} XP{Style.RESET_ALL}"
-                        )
-                    
-                else:
-                    next_checkin_timestamp = checkin_status.get("data", {}).get("nextCheckinIn")
-                    next_checkin_datetime = int(time.time()) + (next_checkin_timestamp / 1000)
-                    formatted_next_checkin = datetime.fromtimestamp(next_checkin_datetime).astimezone(wib).strftime('%x %X %Z')
-                    
+            self.log(
+                f"{Fore.CYAN + Style.BRIGHT}Account :{Style.RESET_ALL}"
+                f"{Fore.WHITE + Style.BRIGHT} {self.mask_account(email)} {Style.RESET_ALL}"
+            )
+            self.log(
+                f"{Fore.CYAN + Style.BRIGHT}Points  :{Style.RESET_ALL}"
+                f"{Fore.WHITE + Style.BRIGHT} {points} XP {Style.RESET_ALL}"
+            )
+            self.log(
+                f"{Fore.CYAN + Style.BRIGHT}Level   :{Style.RESET_ALL}"
+                f"{Fore.WHITE + Style.BRIGHT} {level} {Style.RESET_ALL}"
+            )
+
+        checkin_status = await self.checkin_status(idx, proxy_url)
+        if checkin_status:
+            can_checkin = checkin_status.get("data", {}).get("canCheckinToday")
+            if can_checkin:
+                claim = await self.claim_checkin(idx, proxy_url)
+                if claim:
+                    reward = claim.get("data", {}).get("xpEarned")
                     self.log(
                         f"{Fore.CYAN + Style.BRIGHT}Check-In:{Style.RESET_ALL}"
-                        f"{Fore.YELLOW + Style.BRIGHT} Not Time To Claim {Style.RESET_ALL}"
+                        f"{Fore.GREEN + Style.BRIGHT} Claimed Successfully {Style.RESET_ALL}"
                         f"{Fore.MAGENTA + Style.BRIGHT}-{Style.RESET_ALL}"
-                        f"{Fore.CYAN + Style.BRIGHT} Claim At: {Style.RESET_ALL}"
-                        f"{Fore.WHITE + Style.BRIGHT}{formatted_next_checkin}{Style.RESET_ALL}"
+                        f"{Fore.CYAN + Style.BRIGHT} Reward: {Style.RESET_ALL}"
+                        f"{Fore.WHITE + Style.BRIGHT}{reward} XP{Style.RESET_ALL}"
                     )
+                
+            else:
+                next_checkin_timestamp = checkin_status.get("data", {}).get("nextCheckinIn")
+                next_checkin_datetime = int(time.time()) + (next_checkin_timestamp / 1000)
+                formatted_next_checkin = datetime.fromtimestamp(next_checkin_datetime).strftime('%x %X')
+                
+                self.log(
+                    f"{Fore.CYAN + Style.BRIGHT}Check-In:{Style.RESET_ALL}"
+                    f"{Fore.YELLOW + Style.BRIGHT} Not Time To Claim {Style.RESET_ALL}"
+                    f"{Fore.MAGENTA + Style.BRIGHT}-{Style.RESET_ALL}"
+                    f"{Fore.CYAN + Style.BRIGHT} Claim At: {Style.RESET_ALL}"
+                    f"{Fore.WHITE + Style.BRIGHT}{formatted_next_checkin}{Style.RESET_ALL}"
+                )
 
-            quest_lists = await self.daily_tasks(token, proxy)
-            if quest_lists:
-                quests = quest_lists.get("data", [])
+        quest_lists = await self.daily_tasks(idx, proxy_url)
+        if quest_lists:
+            quests = quest_lists.get("data", [])
 
-                if quests:
-                    self.log(f"{Fore.CYAN + Style.BRIGHT}Tasks   :{Style.RESET_ALL}")
+            if quests:
+                self.log(f"{Fore.CYAN + Style.BRIGHT}Tasks   :{Style.RESET_ALL}")
 
-                    for quest in quests:
-                        quest_id = quest["id"]
-                        quest_name = quest["title"]
-                        quest_xp = quest["xp"]
-                        is_completed = quest["isCompleted"]
+                for quest in quests:
+                    quest_id = quest["id"]
+                    quest_name = quest["title"]
+                    quest_xp = quest["xp"]
+                    is_completed = quest["isCompleted"]
 
-                        if is_completed:
-                            self.log(
-                                f"{Fore.CYAN+Style.BRIGHT}   > {Style.RESET_ALL}"
-                                f"{Fore.WHITE+Style.BRIGHT}{quest_name}{Style.RESET_ALL}"
-                                f"{Fore.YELLOW+Style.BRIGHT} Already Completed {Style.RESET_ALL}"
-                            )
-                            continue
+                    if is_completed:
+                        self.log(
+                            f"{Fore.CYAN+Style.BRIGHT}   > {Style.RESET_ALL}"
+                            f"{Fore.WHITE+Style.BRIGHT}{quest_name}{Style.RESET_ALL}"
+                            f"{Fore.YELLOW+Style.BRIGHT} Already Completed {Style.RESET_ALL}"
+                        )
+                        continue
 
-                        complete = await self.complete_tasks(token, quest_id, quest_name, proxy)
-                        if complete:
-                            self.log(
-                                f"{Fore.CYAN+Style.BRIGHT}   > {Style.RESET_ALL}"
-                                f"{Fore.WHITE+Style.BRIGHT}{quest_name}{Style.RESET_ALL}"
-                                f"{Fore.GREEN+Style.BRIGHT} Completed {Style.RESET_ALL}"
-                                f"{Fore.MAGENTA+Style.BRIGHT}-{Style.RESET_ALL}"
-                                f"{Fore.CYAN+Style.BRIGHT} Reward: {Style.RESET_ALL}"
-                                f"{Fore.WHITE+Style.BRIGHT} {quest_xp} XP {Style.RESET_ALL}"
-                            )
+                    complete = await self.complete_tasks(idx, quest_id, quest_name, proxy_url)
+                    if complete:
+                        self.log(
+                            f"{Fore.CYAN+Style.BRIGHT}   > {Style.RESET_ALL}"
+                            f"{Fore.WHITE+Style.BRIGHT}{quest_name}{Style.RESET_ALL}"
+                            f"{Fore.GREEN+Style.BRIGHT} Completed {Style.RESET_ALL}"
+                            f"{Fore.MAGENTA+Style.BRIGHT}-{Style.RESET_ALL}"
+                            f"{Fore.CYAN+Style.BRIGHT} Reward: {Style.RESET_ALL}"
+                            f"{Fore.WHITE+Style.BRIGHT} {quest_xp} XP {Style.RESET_ALL}"
+                        )
 
-                else:
-                    self.log(
-                        f"{Fore.CYAN + Style.BRIGHT}Tasks   :{Style.RESET_ALL}"
-                        f"{Fore.YELLOW + Style.BRIGHT} No Available Daily Tasks Found {Style.RESET_ALL}"
-                    )
+            else:
+                self.log(
+                    f"{Fore.CYAN + Style.BRIGHT}Tasks   :{Style.RESET_ALL}"
+                    f"{Fore.YELLOW + Style.BRIGHT} No Available Daily Tasks Found {Style.RESET_ALL}"
+                )
 
     async def main(self):
         try:
-            with open('tokens.txt', 'r') as file:
-                accounts = [line.strip() for line in file if line.strip()]
-            
-            proxy_choice, rotate_proxy = self.print_question()
+            tokens = self.load_tokens()
+            if not tokens:
+                print(f"{Fore.RED+Style.BRIGHT}No Tokens Loaded.{Style.RESET_ALL}") 
+                return
+
+            self.print_question()
 
             while True:
                 self.clear_terminal()
                 self.welcome()
                 self.log(
                     f"{Fore.GREEN + Style.BRIGHT}Account's Total: {Style.RESET_ALL}"
-                    f"{Fore.WHITE + Style.BRIGHT}{len(accounts)}{Style.RESET_ALL}"
+                    f"{Fore.WHITE + Style.BRIGHT}{len(tokens)}{Style.RESET_ALL}"
                 )
 
-                use_proxy = True if proxy_choice == 1 else False
-                if use_proxy:
-                    await self.load_proxies()
-                
-                separator = "=" * 26
-                for idx, token in enumerate(accounts, 1):
-                    if token:
-                        self.log(
-                            f"{Fore.CYAN + Style.BRIGHT}{separator}[{Style.RESET_ALL}"
-                            f"{Fore.WHITE + Style.BRIGHT} {idx} {Style.RESET_ALL}"
-                            f"{Fore.CYAN + Style.BRIGHT}Of{Style.RESET_ALL}"
-                            f"{Fore.WHITE + Style.BRIGHT} {len(accounts)} {Style.RESET_ALL}"
-                            f"{Fore.CYAN + Style.BRIGHT}]{separator}{Style.RESET_ALL}"
-                        )
+                if self.USE_PROXY: self.load_proxies()
 
-                        self.cookie_headers[token] = f"__Secure-authjs.session-token={token}"
+                separator = "=" * 25
+                for idx, session_token in enumerate(tokens, start=1):
+                    self.log(
+                        f"{Fore.CYAN + Style.BRIGHT}{separator}[{Style.RESET_ALL}"
+                        f"{Fore.WHITE + Style.BRIGHT} {idx} {Style.RESET_ALL}"
+                        f"{Fore.CYAN + Style.BRIGHT}-{Style.RESET_ALL}"
+                        f"{Fore.WHITE + Style.BRIGHT} {len(tokens)} {Style.RESET_ALL}"
+                        f"{Fore.CYAN + Style.BRIGHT}]{separator}{Style.RESET_ALL}"
+                    )
 
-                        self.HEADERS[token] = {
-                            "Accept": "*/*",
-                            "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
-                            "Origin": "https://hub.playprovidence.io",
-                            "Referer": "https://hub.playprovidence.io/",
-                            "Sec-Fetch-Dest": "empty",
-                            "Sec-Fetch-Mode": "cors",
-                            "Sec-Fetch-Site": "same-origin",
-                            "User-Agent": FakeUserAgent().random
+                    if idx not in self.accounts:
+                        self.accounts[idx] = {
+                            "user_agent": random.choice(self.USER_AGENTS),
+                            "cookie": {
+                                "__Secure-authjs.session-token": session_token
+                            }
                         }
-                            
-                        await self.process_accounts(token, use_proxy, rotate_proxy)
-                        await asyncio.sleep(3)
+                        
+                    await self.process_accounts(idx)
+                    await asyncio.sleep(random.uniform(2.0, 3.0))
 
-                self.log(f"{Fore.CYAN + Style.BRIGHT}={Style.RESET_ALL}"*63)
-                seconds = 12 * 60 * 60
-                while seconds > 0:
-                    formatted_time = self.format_seconds(seconds)
+                self.log(f"{Fore.CYAN + Style.BRIGHT}={Style.RESET_ALL}"*60)
+                
+                delay = 24 * 60 * 60
+                while delay > 0:
+                    formatted_time = self.format_seconds(delay)
                     print(
                         f"{Fore.CYAN+Style.BRIGHT}[ Wait for{Style.RESET_ALL}"
                         f"{Fore.WHITE+Style.BRIGHT} {formatted_time} {Style.RESET_ALL}"
                         f"{Fore.CYAN+Style.BRIGHT}... ]{Style.RESET_ALL}"
                         f"{Fore.WHITE+Style.BRIGHT} | {Style.RESET_ALL}"
-                        f"{Fore.BLUE+Style.BRIGHT}All Accounts Have Been Processed.{Style.RESET_ALL}",
-                        end="\r"
+                        f"{Fore.BLUE+Style.BRIGHT}All Accounts Have Been Processed...{Style.RESET_ALL}",
+                        end="\r",
+                        flush=True
                     )
                     await asyncio.sleep(1)
-                    seconds -= 1
+                    delay -= 1
 
-        except FileNotFoundError:
-            self.log(f"{Fore.RED}File 'accounts.txt' Not Found.{Style.RESET_ALL}")
-            return
         except Exception as e:
             self.log(f"{Fore.RED+Style.BRIGHT}Error: {e}{Style.RESET_ALL}")
             raise e
@@ -450,7 +584,8 @@ if __name__ == "__main__":
         asyncio.run(bot.main())
     except KeyboardInterrupt:
         print(
-            f"{Fore.CYAN + Style.BRIGHT}[ {datetime.now().astimezone(wib).strftime('%x %X %Z')} ]{Style.RESET_ALL}"
+            f"{Fore.CYAN + Style.BRIGHT}[ {datetime.now().strftime('%x %X')} ]{Style.RESET_ALL}"
             f"{Fore.WHITE + Style.BRIGHT} | {Style.RESET_ALL}"
             f"{Fore.RED + Style.BRIGHT}[ EXIT ] Providence - BOT{Style.RESET_ALL}                                       "                              
         )
+        sys.exit(0)
