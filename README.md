@@ -16,7 +16,7 @@
 - [Usage](#-usage)
 - [Donation](#-Donation)
 - [Contributing](#-contributing)
-- [Contact & Support](#-Contact-&-Support)
+- [Contact & Support](#-Contact--Support)
 
 ## 🎯 Overview
 
