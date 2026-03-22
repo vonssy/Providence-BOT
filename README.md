@@ -23,7 +23,7 @@
 Providence BOT is an automated tool designed to daily completion across multiple accounts. It provides seamless offers robust proxy support for enhanced security and reliability.
 
 **🔗 Get Started:** [Register on Providence](https://hub.playprovidence.io/referral-signin/DAA4BADA)  
-> **Important:** Signup with google account
+> **Important:** Signup with google account  
 **🎁 Use Code:** `DAA4BADA`
 
 
